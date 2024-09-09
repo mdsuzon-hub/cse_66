@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Book Haven - Download PDF Books</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <header>
+        <nav class="navbar" id="navbar">
+            <h1 class="logo">Book Haven</h1>
+            <button class="menu-toggle" aria-label="Toggle menu">☰</button>
+            <ul class="nav-menu">
+                <li class="nav-item">
+                    <a href="index.html" class="nav-link">Physics II</a>
+                </li>
+                <li class="nav-item">
+                    <a href="ec.html" class="nav-link active">Electrical Circuits</a>
+                </li>
+                <li class="nav-item">
+                    <a href="english.html" class="nav-link">English</a>
+                </li>
+                <li class="nav-item">
+                    <a href="math.html" class="nav-link">Math</a>
+                </li>
+            </ul>
+            
+        </nav>
+    </header>
+    
+
+    <!-- Unavailable Card Modal -->
+    <div id="unavailableModal" class="modal">
+        <div class="modal-content">
+            <h2>Download Not Available</h2>
+            <p>We're sorry, this book is currently unavailable for download. Please check back later or explore other books.</p>
+            <button onclick="closeUnavailableModal()">Close</button>
+        </div>
+    </div>
+
+    <main>
+        <section id="physics" class="category">
+            <h2>Physics II</h2>
+        
+            <!-- Subtopic: Electricity and Magnetism -->
+            <div class="subtopic">
+                <h3>Electricity and Magnetism</h3>
+                <div class="book-list">
+                    <div class="book-card">
+                        <h4>Electricity, Magnetism</h4>
+                        <p>Author: Md. Moshiur Rahman</p>
+                        <button onclick="downloadBook('assets/physics/book1.pdf', true)">Download PDF</button>
+                    </div>
+                </div>
+            </div>
+        
+            <!-- Subtopic: General Physics -->
+            <div class="subtopic">
+                <h3>General Physics</h3>
+                <div class="book-list">
+                    <div class="book-card">
+                        <h4>Book Title 1</h4>
+                        <p>Author: John Doe</p>
+                        <button onclick="downloadBook('book1.pdf', false)">Download PDF</button>
+                    </div>
+                    <div class="book-card">
+                        <h4>Another Physics Book</h4>
+                        <p>Author: Jane Smith</p>
+                        <button onclick="downloadBook('book2.pdf', false)">Download PDF</button>
+                    </div>
+                    <!-- Add more book cards as needed -->
+                </div>
+            </div>
+        
+            <!-- Subtopic: Optics and Waves -->
+            <div class="subtopic">
+                <h3>Optics and Waves</h3>
+                <div class="book-list">
+                    <div class="book-card">
+                        <h4>Light and Wave Phenomena</h4>
+                        <p>Author: ___</p>
+                        <button onclick="downloadBook('book3.pdf', false)">Download PDF</button>
+                    </div>
+                    <!-- Add more book cards as needed -->
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <footer>
+        <p>&copy; 2024 Book Haven. All rights reserved.</p>
+    </footer>
+
+    <script src="scripts.js"></script>
+</body>
+</html>

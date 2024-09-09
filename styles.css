@@ -1,0 +1,377 @@
+/* Global Styles */
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+    scroll-behavior: smooth;
+}
+
+body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    background-color: #181818;
+    color: #ffffff;
+}
+
+/* Header Styles */
+header {
+    background-color: #242424;
+    padding: 10px 20px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    position: sticky;
+    top: 0;
+    z-index: 1000;
+}
+
+.navbar {
+    display: flex;
+    align-items: center;
+    width: 100%;
+    justify-content: space-between;
+}
+
+.logo {
+    font-size: 24px;
+    color: #f8b400;
+}
+
+.menu-toggle {
+    display: none;
+    font-size: 24px;
+    color: #f8b400;
+    background: none;
+    border: none;
+    cursor: pointer;
+}
+
+.nav-links {
+    list-style: none;
+    display: flex;
+    gap: 20px;
+}
+
+.nav-links a {
+    color: #f0f0f0;
+    text-decoration: none;
+    font-weight: 500;
+    transition: color 0.3s;
+}
+
+.nav-links a:hover {
+    color: #f8b400;
+}
+
+/* Main Section Styles */
+.category {
+    padding: 40px 20px;
+}
+
+.category h2 {
+    margin-bottom: 20px;
+    font-size: 28px;
+    color: #f8b400;
+    border-bottom: 2px solid #f8b400;
+    padding-bottom: 5px;
+}
+
+.book-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 20px;
+}
+
+.book-card {
+    background-color: #2a2a2a;
+    padding: 20px;
+    border-radius: 10px;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+    transition: transform 0.3s, box-shadow 0.3s;
+    text-align: center;
+}
+
+.book-card:hover {
+    transform: translateY(-10px);
+    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.5);
+}
+
+.book-card h3 {
+    margin-bottom: 10px;
+    color: #f8b400;
+}
+
+.book-card p {
+    margin-bottom: 15px;
+    color: #cccccc;
+}
+
+.book-card button {
+    background-color: #f8b400;
+    border: none;
+    padding: 10px 15px;
+    border-radius: 5px;
+    color: #1f1f1f;
+    font-weight: bold;
+    cursor: pointer;
+    transition: background-color 0.3s;
+}
+
+.book-card button:hover {
+    background-color: #d99200;
+}
+
+/* Footer Styles */
+footer {
+    background-color: #242424;
+    text-align: center;
+    padding: 15px 0;
+    margin-top: 40px;
+}
+
+footer p {
+    margin: 0;
+    color: #777;
+}
+
+/* Responsive Styles */
+@media (max-width: 768px) {
+    .menu-toggle {
+        display: block;
+    }
+
+    .nav-links {
+        display: none;
+        flex-direction: column;
+        gap: 10px;
+        position: absolute;
+        top: 60px;
+        right: 10px;
+        background-color: #1f1f1f;
+        padding: 15px;
+        border-radius: 8px;
+        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.5);
+    }
+
+    .nav-links.show {
+        display: flex;
+    }
+}
+
+/* Modal Styles */
+.modal {
+    display: none; /* Hidden by default */
+    position: fixed;
+    z-index: 1000;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.8); /* Dark overlay */
+    justify-content: center;
+    align-items: center;
+}
+
+.modal-content {
+    background-color: #2a2a2a;
+    padding: 30px;
+    border-radius: 10px;
+    text-align: center;
+    color: #f8b400;
+    box-shadow: 0 8px 16px rgba(0, 0, 0, 0.3);
+    max-width: 400px;
+}
+
+.modal-content h2 {
+    margin-bottom: 15px;
+    font-size: 24px;
+    color: #ffffff;
+}
+
+.modal-content p {
+    margin-bottom: 20px;
+    color: #cccccc;
+}
+
+.modal-content button {
+    background-color: #f8b400;
+    border: none;
+    padding: 10px 20px;
+    border-radius: 5px;
+    color: #1f1f1f;
+    font-weight: bold;
+    cursor: pointer;
+    transition: background-color 0.3s;
+}
+
+.modal-content button:hover {
+    background-color: #d99200;
+}
+
+.category {
+    margin: 20px;
+}
+
+.subtopic {
+    margin-top: 20px;
+}
+
+.subtopic h3 {
+    font-size: 20px;
+    margin-bottom: 10px;
+    color: #f8b400;
+    border-bottom: 2px solid #f8b400;
+    padding-bottom: 5px;
+}
+
+.nav-links a {
+    color: #ffffff;
+    text-decoration: none;
+    padding: 8px 16px;
+    transition: background-color 0.3s, color 0.3s;
+}
+
+.nav-links a.active {
+    background-color: #f8b400; /* Highlight color */
+    color: #1f1f1f;
+    border-radius: 5px;
+}
+
+
+
+/*  */
+
+/* Navigation Menu Styling */
+.nav-menu {
+    list-style: none;
+    display: flex;
+    gap: 10px;
+    padding: 0;
+    margin: 0;
+}
+
+/* Card Style for Navigation Items */
+.nav-item {
+    display: flex;
+}
+
+.nav-link {
+    display: block;
+    padding: 15px 20px;
+    border-radius: 8px;
+    text-decoration: none;
+    background-color: #2a2a2a;
+    color: #f8b400;
+    font-weight: bold;
+    transition: background-color 0.3s, color 0.3s;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+}
+
+/* Style for Active Page Link */
+.nav-link.active {
+    background-color: #f8b400; /* Highlight active state */
+    color: #2a2a2a;
+    box-shadow: 0 6px 12px rgba(0, 0, 0, 0.3);
+}
+
+/* Hover Effects */
+.nav-link:hover {
+    background-color: #d99200;
+    color: #fff;
+}
+
+
+/*  */
+
+/* General header styles */
+header {
+    background-color: #1a1a1a;
+    color: #f8b400;
+    padding: 10px 20px;
+}
+
+/* Navigation bar styling */
+.navbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    max-width: 1200px;
+    margin: 0 auto;
+}
+
+/* Logo styling */
+.logo {
+    font-size: 24px;
+    font-weight: bold;
+    color: #f8b400;
+    text-decoration: none;
+}
+
+/* Menu toggle button */
+.menu-toggle {
+    display: none;
+    background: none;
+    border: none;
+    font-size: 24px;
+    color: #f8b400;
+    cursor: pointer;
+}
+
+/* Navigation menu styles */
+.nav-menu {
+    list-style: none;
+    display: flex;
+    gap: 20px;
+    padding: 0;
+    margin: 0;
+}
+
+/* Navigation item styles */
+.nav-item {
+    display: flex;
+}
+
+.nav-link {
+    display: block;
+    padding: 10px 15px;
+    text-decoration: none;
+    background-color: #2a2a2a;
+    color: #f8b400;
+    font-weight: bold;
+    border-radius: 8px;
+    transition: background-color 0.3s, color 0.3s;
+}
+
+/* Style for the active navigation link */
+.nav-link.active {
+    background-color: #f8b400;
+    color: #2a2a2a;
+    box-shadow: 0 6px 12px rgba(0, 0, 0, 0.3);
+}
+
+/* Hover effects for navigation links */
+.nav-link:hover {
+    background-color: #d99200;
+    color: #fff;
+}
+
+/* Responsive design for smaller screens */
+@media (max-width: 768px) {
+    .nav-menu {
+        display: none;
+        flex-direction: column;
+        width: 100%;
+        position: absolute;
+        top: 60px;
+        left: 0;
+        background-color: #1a1a1a;
+    }
+
+    .nav-menu.active {
+        display: flex;
+    }
+
+    .menu-toggle {
+        display: block;
+    }
+}
+

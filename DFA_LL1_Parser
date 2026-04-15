@@ -1,0 +1,882 @@
+/*
+    Name: MD SUZON MIA
+    ID: 241-15-717
+    Section: 66_H1
+    
+    Please take input as input.cbl
+ */
+
+
+#include <stdio.h>
+#include <string.h>
+#include <stdlib.h>
+
+/* ── ANSI colour ──────────────────────────────────────────────────── */
+#define RST   "\033[0m"
+#define BOLD  "\033[1m"
+#define RED   "\033[1;31m"
+#define GRN   "\033[1;32m"
+#define YLW   "\033[1;33m"
+#define CYN   "\033[1;36m"
+#define MAG   "\033[1;35m"
+#define DIM   "\033[2m"
+#define BLU   "\033[1;34m"
+#define WHT   "\033[1;37m"
+#define REDBG "\033[41;1;37m"
+#define GRNBG "\033[42;1;30m"
+
+/* ═══════════════════════════════════════════════════════════════════
+ *  SECTION 1 — DFA LEXER
+ *
+ *  FIXES:
+ *   1. Added '-' (MINUS, class 36) — was missing entirely
+ *   2. Added '<=' two-char token (LESSEQ) via new state S85
+ *   3. S69 (after '<') now transitions on '=' to S85 (LESSEQ)
+ *   4. NC bumped from 36 to 37 to accommodate new class
+ *   5. NUM_STATES bumped to 86 (added S84=MINUS single, S85=LESSEQ)
+ *   6. VAR identifiers with multiple digit runs fixed via S62→S61 loop
+ *   7. FUNC identifiers with multiple digit/letter segments handled
+ * ═══════════════════════════════════════════════════════════════════ */
+
+#define NC         37          /* input classes: 0..36 */
+#define NUM_STATES 88
+#define DEAD       83
+#define DX         DEAD
+#define MAX_TOK    4096
+
+/*
+ *  Character-class map (col indices 0..36):
+ *   0=#  1=/  2=_  3=a  4=b  5=c  6=d  7=e  8=f  9=h
+ *  10=i 11=k 12=l 13=m 14=n 15=o 16=p 17=r 18=s 19=t
+ *  20=u 21=w 22=F 23=digit 24=. 25== 26=+ 27=< 28=( 29=)
+ *  30=[ 31=] 32=: 33=>  34=space/tab  35=other-letter  36=-
+ */
+static int get_class(unsigned char c)
+{
+    switch (c) {
+        case '#': return  0;   case '/': return  1;   case '_': return  2;
+        case 'a': return  3;   case 'b': return  4;   case 'c': return  5;
+        case 'd': return  6;   case 'e': return  7;   case 'f': return  8;
+        case 'h': return  9;   case 'i': return 10;   case 'k': return 11;
+        case 'l': return 12;   case 'm': return 13;   case 'n': return 14;
+        case 'o': return 15;   case 'p': return 16;   case 'r': return 17;
+        case 's': return 18;   case 't': return 19;   case 'u': return 20;
+        case 'w': return 21;   case 'F': return 22;
+        case '0': case '1': case '2': case '3': case '4':
+        case '5': case '6': case '7': case '8': case '9': return 23;
+        case '.': return 24;   case '=': return 25;   case '+': return 26;
+        case '<': return 27;   case '(': return 28;   case ')': return 29;
+        case '[': return 30;   case ']': return 31;   case ':': return 32;
+        case '>': return 33;
+        case ' ': case '\t': return 34;
+        case '-': return 36;   /* NEW: minus operator */
+        default:  return 35;
+    }
+}
+
+/*
+ *  next_state[NUM_STATES=86][NC=37]
+ *
+ *  KEY FIXES in this table vs original:
+ *  S0  col36(-) -> S84  (start of MINUS token)
+ *  S69 col25(=) -> S85  (< followed by = → LESSEQ)
+ *  S62 col23(digit) -> S62  (allow multiple digit segments in _var names)
+ *  S62 col35(other-letter) -> S61  (allow more letters after digits in _var)
+ *  S77/S78 col36 -> DX  (no minus inside label literals)
+ *
+ *  All rows padded to 37 columns (added col36 at end of every row).
+ */
+static const int next_state[NUM_STATES][NC] = {
+/*         #    /    _    a   b    c    d    e    f    h    i    k    l    m    n    o    p    r    s    t    u    w    F    dig   .    =    +    <    (    )    [    ]    :    >   sp  oth   -  */
+/* S0  */{ 1,  18,  60,  57,  33,  57,  21,  57,  57,  57,  24,  57,  82,  43,  57,  57,  49,  27,  57,  57,  57,  38,  57,  64,  65,  67,  68,  69,  70,  71,  72,  73,  DX,  86,  DX,  57,  84},
+/* S1  */{ DX, DX,  DX,  57,  57,  57,  57,  57,  57,  57,   2,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  57,  DX},
+/* S2  */{ DX, DX,  DX,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,   3,  57,  57,  57,  57,  57,  57,  57,  57,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  57,  DX},
+/* S3  */{ DX, DX,  DX,  57,  57,   4,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  57,  DX},
+/* S4  */{ DX, DX,  DX,  57,  57,  57,  57,  57,  57,  57,  57,  57,   5,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  57,  DX},
+/* S5  */{ DX, DX,  DX,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,   6,  57,  57,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  57,  DX},
+/* S6  */{ DX, DX,  DX,  57,  57,  57,   7,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  57,  DX},
+/* S7  */{ DX, DX,  DX,  57,  57,  57,  57,   8,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  57,  DX},
+/* S8  */{ DX, DX,  DX,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  DX,  DX,  DX,  DX,   9,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  57,  DX},
+/* S9  */{ DX, DX,  DX,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  10,  57,  57,  57,  57,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  57,  DX},
+/* S10 */{ DX, DX,  DX,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  11,  57,  57,  57,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  57,  DX},
+/* S11 */{ DX, DX,  DX,  57,  57,  57,  12,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  57,  DX},
+/* S12 */{ DX, DX,  DX,  57,  57,  57,  57,  57,  57,  57,  13,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  57,  DX},
+/* S13 */{ DX, DX,  DX,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  14,  57,  57,  57,  57,  57,  57,  57,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  57,  DX},
+/* S14 */{ DX, DX,  DX,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  DX,  15,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  57,  DX},
+/* S15 */{ DX, DX,  DX,  57,  57,  57,  57,  57,  57,  16,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  57,  DX},
+/* S16 */{ DX, DX,  DX,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  17,  DX,  57,  DX},
+/* S17 */{ DX, DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX},
+/* S18 */{ DX, 19,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX},
+/* S19 */{ 20, 20,  20,  20,  20,  20,  20,  20,  20,  20,  20,  20,  20,  20,  20,  20,  20,  20,  20,  20,  20,  20,  20,  20,  20,  20,  20,  20,  20,  20,  20,  20,  20,  20,  20,  20,  20},
+/* S20 */{ 20, 20,  20,  20,  20,  20,  20,  20,  20,  20,  20,  20,  20,  20,  20,  20,  20,  20,  20,  20,  20,  20,  20,  20,  20,  20,  20,  20,  20,  20,  20,  20,  20,  20,  20,  20,  20},
+/* S21 */{ DX, DX,  DX,  57,  57,  57,  57,  22,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  57,  DX},
+/* S22 */{ DX, DX,  DX,  57,  57,  23,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  57,  DX},
+/* S23 */{ DX, DX,  DX,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  58,  57,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  57,  DX},
+/* S24 */{ DX, DX,  DX,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  25,  57,  57,  57,  57,  57,  57,  57,  57,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  57,  DX},
+/* S25 */{ DX, DX,  DX,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  26,  57,  57,  57,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  57,  DX},
+/* S26 */{ DX, DX,  DX,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  58,  57,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  57,  DX},
+/* S27 */{ DX, DX,  DX,  57,  57,  57,  57,  28,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  57,  DX},
+/* S28 */{ DX, DX,  DX,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  29,  57,  57,  57,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  57,  DX},
+/* S29 */{ DX, DX,  DX,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  30,  57,  57,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  57,  DX},
+/* S30 */{ DX, DX,  DX,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  31,  57,  57,  57,  57,  57,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  57,  DX},
+/* S31 */{ DX, DX,  DX,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  32,  57,  57,  57,  57,  57,  57,  57,  57,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  57,  DX},
+/* S32 */{ DX, DX,  DX,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  58,  57,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  57,  DX},
+/* S33 */{ DX, DX,  DX,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  34,  57,  57,  57,  57,  57,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  57,  DX},
+/* S34 */{ DX, DX,  DX,  57,  57,  57,  57,  35,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  57,  DX},
+/* S35 */{ DX, DX,  DX,  36,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  57,  DX},
+/* S36 */{ DX, DX,  DX,  57,  57,  57,  57,  57,  57,  57,  57,  37,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  57,  DX},
+/* S37 */{ DX, DX,  DX,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  58,  57,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  57,  DX},
+/* S38 */{ DX, DX,  DX,  57,  57,  57,  57,  57,  57,  39,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  57,  DX},
+/* S39 */{ DX, DX,  DX,  57,  57,  57,  57,  57,  57,  57,  40,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  57,  DX},
+/* S40 */{ DX, DX,  DX,  57,  57,  57,  57,  57,  57,  57,  57,  57,  41,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  57,  DX},
+/* S41 */{ DX, DX,  DX,  57,  57,  57,  57,  42,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  57,  DX},
+/* S42 */{ DX, DX,  DX,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  58,  57,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  57,  DX},
+/* S43 */{ DX, DX,  DX,  44,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  57,  DX},
+/* S44 */{ DX, DX,  DX,  57,  57,  57,  57,  57,  57,  57,  45,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  57,  DX},
+/* S45 */{ DX, DX,  DX,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  46,  57,  57,  57,  57,  57,  57,  57,  57,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  57,  DX},
+/* S46 */{ DX, DX,  DX,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  47,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  57,  DX},
+/* S47 */{ DX, DX,  DX,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  48,  57,  57,  57,  57,  57,  57,  57,  57,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  57,  DX},
+/* S48 */{ DX, DX,  DX,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  58,  57,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  57,  DX},
+/* S49 */{ DX, DX,  DX,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  50,  57,  57,  57,  57,  57,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  57,  DX},
+/* S50 */{ DX, DX,  DX,  57,  57,  57,  57,  57,  57,  57,  51,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  57,  DX},
+/* S51 */{ DX, DX,  DX,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  52,  57,  57,  57,  57,  57,  57,  57,  57,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  57,  DX},
+/* S52 */{ DX, DX,  DX,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  53,  57,  57,  57,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  57,  DX},
+/* S53 */{ DX, DX,  DX,  57,  57,  57,  57,  57,  54,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  57,  DX},
+/* S54 */{ DX, DX,  DX,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  55,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  57,  DX},
+/* S55 */{ DX, DX,  DX,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  56,  57,  57,  57,  57,  57,  57,  57,  57,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  57,  DX},
+/* S56 */{ DX, DX,  DX,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  58,  57,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  57,  DX},
+
+/* S57: generic identifier (letters/underscore), transitions to S58 on 'F' suffix, accepts on 'F'+letter via S58/S59 */
+/* S57 */{ DX, DX,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  58,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  57,  DX},
+/* S58: after 'F' in identifier — 'n' → S59(accept FUNC), other letters → S57, 'F' → S58 */
+/* S58 */{ DX, DX,  DX,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  59,  57,  57,  57,  57,  57,  57,  57,  58,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  57,  DX},
+/* S59: accepting FUNC — still allow more letters (e.g., "printfFn" => accept, done) */
+/* S59 */{ DX, DX,  DX,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  58,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  57,  DX},
+
+/* S60: start of _var — '_' seen, must be followed by a letter (start of alphabetic part) */
+/* S60 */{ DX, DX,  DX,  61,  61,  61,  61,  61,  61,  61,  61,  61,  61,  61,  61,  61,  61,  61,  61,  61,  61,  61,  61,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  61,  DX},
+/* S61: inside letter part (one or more letters) — digit → S62 (exactly one digit), letter/underscore → stay in letter part */
+/* S61 */{ DX, DX,  61,  61,  61,  61,  61,  61,  61,  61,  61,  61,  61,  61,  61,  61,  61,  61,  61,  61,  61,  61,  61,  62,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  61,  DX},
+/* S62: exactly one digit seen — now must be followed by exactly one letter (S63 accepting) */
+/* S62 */{ DX, DX,  DX,  63,  63,  63,  63,  63,  63,  63,  63,  63,  63,  63,  63,  63,  63,  63,  63,  63,  63,  63,  63,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  63,  DX},
+/* S63: accepting VAR — exactly one letter after digit; any further characters make it invalid (go to DEAD) */
+/* S63 */{ DX, DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX},
+
+/* S64: NUM — integer: accumulate digits */
+/* S64 */{ DX, DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  64,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX},
+/* S65: TERM first dot */
+/* S65 */{ DX, DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  66,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX},
+/* S66: accepting TERM (..) */
+/* S66 */{ DX, DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX},
+/* S67: ASSIGN (=) */
+/* S67 */{ DX, DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX},
+/* S68: PLUS (+) */
+/* S68 */{ DX, DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX},
+/* S69: LESS (<) — on '=' → LESSEQ (S85) */
+/* S69 */{ DX, DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  85,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX},
+/* S70: LPAREN */
+/* S70 */{ DX, DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX},
+/* S71: RPAREN */
+/* S71 */{ DX, DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX},
+/* S72: LBRACKET */
+/* S72 */{ DX, DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX},
+/* S73: RBRACKET */
+/* S73 */{ DX, DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX},
+/* S74 */{ DX, DX,  DX,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  75,  57,  57,  57,  57,  57,  57,  58,  57,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  57,  DX},
+/* S75 */{ DX, DX,  DX,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  76,  57,  57,  57,  57,  57,  58,  57,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  57,  DX},
+/* S76 */{ DX, DX,  77,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  58,  57,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  57,  DX},
+/* S77: inside label text (after "loop_") */
+/* S77 */{ DX, DX,  DX,  78,  78,  78,  78,  78,  78,  78,  78,  78,  78,  78,  78,  78,  78,  78,  78,  78,  78,  78,  78,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  78,  DX},
+/* S78 */{ DX, DX,  DX,  78,  78,  78,  78,  78,  78,  78,  78,  78,  78,  78,  78,  78,  78,  78,  78,  78,  78,  78,  78,  79,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  78,  DX},
+/* S79 */{ DX, DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  80,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX},
+/* S80 */{ DX, DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  81,  DX,  DX,  DX,  DX},
+/* S81: accepting LABEL */
+/* S81 */{ DX, DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX},
+/* S82 */{ DX, DX,  DX,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  57,  74,  57,  57,  57,  57,  57,  57,  58,  57,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  57,  DX},
+/* S83: DEAD — never transitions */
+/* S83 */{ DX, DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX},
+/* S84: accepting MINUS (single '-') */
+/* S84 */{ DX, DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX},
+/* S85: accepting LESSEQ (<=) */
+/* S85 */{ DX, DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX},
+
+/* S86: GREATER (>) — on '=' → GREATEREQ (S87) */
+/* S86 */{ DX, DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  87,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX},
+/* S87: accepting GREATEREQ (>=) */
+/* S87 */{ DX, DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX,  DX},
+};
+
+static const char *accepting_tokens[NUM_STATES] = {
+    [17]="INCLUDE", [19]="COMMENT", [20]="COMMENT",
+    [23]="DEC",     [26]="INT",     [32]="RETURN",
+    [37]="BREAK",   [42]="WHILE",   [48]="MAINFN",
+    [56]="BUILTIN", [59]="FUNC",    [63]="VAR",
+    [64]="NUM",     [66]="TERM",    [67]="ASSIGN",
+    [68]="PLUS",    [69]="LESS",    [70]="LPAREN",
+    [71]="RPAREN",  [72]="LBRACKET",[73]="RBRACKET",
+    [81]="LABEL",   [84]="MINUS",   [85]="LESSEQ",
+    [86]="GREATER", [87]="GREATEREQ",  // NEW
+};
+
+typedef struct { const char *type; char lex[256]; int line; } Token;
+static Token tokens[MAX_TOK];
+static int   ntok = 0;
+
+static void add_tok(const char *type, const char *lex, int line){
+    if(ntok>=MAX_TOK) return;
+    tokens[ntok].type=type;
+    strncpy(tokens[ntok].lex,lex,255); tokens[ntok].lex[255]='\0';
+    tokens[ntok].line=line; ntok++;
+}
+
+static void scan(const char *src){
+    int i=0, len=(int)strlen(src), line=1;
+    while(i<len){
+        if(src[i]=='\n'){line++;i++;continue;}
+        if(src[i]==' '||src[i]=='\t'||src[i]=='\r'){i++;continue;}
+        int state=0,start=i,las=-1,lap=-1;
+        
+        // Try to find a valid token first
+        while(i<len){
+            unsigned char c=(unsigned char)src[i];
+            if(c=='\n') break;
+            int cl=get_class(c);
+            int ns=next_state[state][cl];
+            if(ns==DEAD) break;
+            state=ns; i++;
+            if(accepting_tokens[state]){las=state;lap=i;}
+        }
+        
+        // If we found a valid token before hitting DEAD
+        if(lap!=-1){
+            i=lap;
+            int tlen=i-start; 
+            char lex[256]; 
+            strncpy(lex,src+start,tlen); 
+            lex[tlen]='\0';
+            add_tok(accepting_tokens[las],lex,line);
+        } 
+        // No valid token found - collect entire invalid sequence
+        else {
+            // Find the end of the invalid token (until whitespace or newline)
+            int invalid_end = start;
+            while(invalid_end < len && 
+                  src[invalid_end] != ' ' && 
+                  src[invalid_end] != '\t' && 
+                  src[invalid_end] != '\n' &&
+                  src[invalid_end] != '\r') {
+                invalid_end++;
+            }
+            
+            // Collect the entire invalid sequence as one token
+            int tlen = invalid_end - start;
+            char lex[256];
+            strncpy(lex, src + start, tlen);
+            lex[tlen] = '\0';
+            add_tok("UNKNOWN", lex, line);
+            i = invalid_end;
+        }
+    }
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+ *  SECTION 2 — TABLE-DRIVEN LL(1) PARSER
+ *
+ *  FIXES:
+ *   1. Added T_MINUS and T_LESSEQ terminal indices
+ *   2. NTER bumped from 22 to 24
+ *   3. Parse table columns extended for MINUS and LESSEQ
+ *   4. WhileStmt grammar now accepts LESS or LESSEQ (handled via peek)
+ *   5. Expr grammar extended:
+ *        Expr -> VAR MINUS Expr | VAR MINUS NUM (rule 37/38)
+ *        Expr -> NUM MINUS Expr | NUM MINUS NUM (rule 39/40 → merged as 37/38)
+ *   6. FuncDecl param can also be _VAR (already handled — no change needed)
+ *   7. Inline FUNC call in Expr correctly pushes RPAREN last so it pops first
+ *   8. AssignStmt where RHS is a FUNC call — Expr peek on FUNC token handled
+ * ═══════════════════════════════════════════════════════════════════ */
+
+#define T_INCLUDE   0
+#define T_COMMENT   1
+#define T_INT       2
+#define T_DEC       3
+#define T_VAR       4
+#define T_ASSIGN    5
+#define T_NUM       6
+#define T_TERM      7
+#define T_MAINFN    8
+#define T_LPAREN    9
+#define T_RPAREN   10
+#define T_LBRACKET 11
+#define T_RBRACKET 12
+#define T_WHILE    13
+#define T_LESS     14
+#define T_PLUS     15
+#define T_LABEL    16
+#define T_BREAK    17
+#define T_BUILTIN  18
+#define T_RETURN   19
+#define T_FUNC     20
+#define T_DOLLAR   21
+#define T_MINUS    22   
+#define T_LESSEQ   23   
+#define T_GREATER  24   // NEW
+#define T_GREATEREQ 25  // NEW
+#define NTER       26   // Changed from 24 to 26
+
+static const char *TERM_NAME[NTER]={
+    "INCLUDE","COMMENT","INT","DEC","VAR","ASSIGN","NUM","TERM",
+    "MAINFN","LPAREN","RPAREN","LBRACKET","RBRACKET","WHILE","LESS",
+    "PLUS","LABEL","BREAK","BUILTIN","RETURN","FUNC","$","MINUS","LESSEQ",
+    "GREATER","GREATEREQ"  // NEW
+};
+
+#define NT_PROGRAM      0
+#define NT_INCLUDE      1
+#define NT_COMMENTLIST  2
+#define NT_FUNCDECLLIST 3
+#define NT_FUNCDECL     4
+#define NT_TYPEKW       5
+#define NT_MAINBLOCK    6
+#define NT_STMTLIST     7
+#define NT_STMT         8
+#define NT_DECLSTMT     9
+#define NT_WHILESTMT   10
+#define NT_ASSIGNSTMT  11
+#define NT_PRINTSTMT   12
+#define NT_RETURNSTMT  13
+#define NT_RETVAL      14
+#define NT_LABELSTMT   15
+#define NT_BREAKSTMT   16
+#define NT_ARGOPT      17
+#define NT_EXPR        18
+#define NNT            19
+
+static const char *NT_NAME[NNT]={
+    "Program","Include","CommentList","FuncDeclList","FuncDecl",
+    "TypeKw","MainBlock","StmtList","Stmt","DeclStmt",
+    "WhileStmt","AssignStmt","PrintStmt","ReturnStmt","RetVal",
+    "LabelStmt","BreakStmt","ArgOpt","Expr"
+};
+
+/*
+ *  Production rules (1-indexed):
+ *   Rules 1-36 unchanged from original.
+ *   Rules 37-40 NEW — Expr with MINUS operator:
+ *     37: Expr -> VAR MINUS Expr
+ *     38: Expr -> VAR MINUS NUM   (keep simple; subsumed by 37 in practice)
+ *     39: Expr -> NUM MINUS Expr
+ *     40: Expr -> NUM MINUS NUM
+ *  NOTE: rules 37-40 are handled inline in the Expr peek block,
+ *        not via the parse table (same pattern as PLUS rules 33-36).
+ */
+#define NUM_RULES 40
+
+static const char *rule_label[NUM_RULES]={
+/* 1  */ "Program      -> Include CommentList FuncDeclList MainBlock",
+/* 2  */ "Include      -> INCLUDE",
+/* 3  */ "CommentList  -> COMMENT CommentList",
+/* 4  */ "CommentList  -> epsilon",
+/* 5  */ "FuncDeclList -> FuncDecl FuncDeclList",
+/* 6  */ "FuncDeclList -> epsilon",
+/* 7  */ "FuncDecl     -> TypeKw FUNC LPAREN TypeKw VAR RPAREN LBRACKET StmtList RBRACKET",
+/* 8  */ "TypeKw       -> INT",
+/* 9  */ "TypeKw       -> DEC",
+/*10  */ "MainBlock    -> TypeKw MAINFN LPAREN RPAREN LBRACKET StmtList RBRACKET",
+/*11  */ "StmtList     -> Stmt StmtList",
+/*12  */ "StmtList     -> epsilon",
+/*13  */ "Stmt         -> WhileStmt",
+/*14  */ "Stmt         -> AssignStmt",
+/*15  */ "Stmt         -> PrintStmt",
+/*16  */ "Stmt         -> ReturnStmt",
+/*17  */ "Stmt         -> LabelStmt",
+/*18  */ "Stmt         -> BreakStmt",
+/*19  */ "Stmt         -> DeclStmt",
+/*20  */ "DeclStmt     -> TypeKw VAR ASSIGN Expr TERM",
+/*21  */ "TypeKw       -> INT",
+/*22  */ "TypeKw       -> DEC",
+/*23  */ "WhileStmt    -> WHILE LPAREN TypeKw VAR LESS Expr TERM RPAREN LBRACKET StmtList RBRACKET",
+/*24  */ "AssignStmt   -> VAR ASSIGN Expr TERM",
+/*25  */ "PrintStmt    -> BUILTIN LPAREN VAR RPAREN TERM",
+/*26  */ "ReturnStmt   -> RETURN RetVal TERM",
+/*27  */ "RetVal       -> VAR",
+/*28  */ "RetVal       -> NUM",
+/*29  */ "LabelStmt    -> LABEL",
+/*30  */ "BreakStmt    -> BREAK TERM",
+/*31  */ "ArgOpt       -> VAR",
+/*32  */ "ArgOpt       -> epsilon",
+/*33  */ "Expr         -> VAR PLUS Expr",
+/*34  */ "Expr         -> VAR",
+/*35  */ "Expr         -> NUM PLUS Expr",
+/*36  */ "Expr         -> NUM",
+/*37  */ "Expr         -> VAR MINUS Expr",
+/*38  */ "Expr         -> VAR MINUS NUM",     /* degenerate — NUM is a valid Expr */
+/*39  */ "Expr         -> NUM MINUS Expr",
+/*40  */ "Expr         -> NUM MINUS NUM",
+};
+
+static const char *rule_rhs[NUM_RULES]={
+/* 1  */ "Include CommentList FuncDeclList MainBlock",
+/* 2  */ "INCLUDE",
+/* 3  */ "COMMENT CommentList",
+/* 4  */ "",
+/* 5  */ "FuncDecl FuncDeclList",
+/* 6  */ "",
+/* 7  */ "TypeKw FUNC LPAREN TypeKw VAR RPAREN LBRACKET StmtList RBRACKET",
+/* 8  */ "INT",
+/* 9  */ "DEC",
+/*10  */ "TypeKw MAINFN LPAREN RPAREN LBRACKET StmtList RBRACKET",
+/*11  */ "Stmt StmtList",
+/*12  */ "",
+/*13  */ "WhileStmt",
+/*14  */ "AssignStmt",
+/*15  */ "PrintStmt",
+/*16  */ "ReturnStmt",
+/*17  */ "LabelStmt",
+/*18  */ "BreakStmt",
+/*19  */ "DeclStmt",
+/*20  */ "TypeKw VAR ASSIGN Expr TERM",
+/*21  */ "INT",
+/*22  */ "DEC",
+/*23  */ "WHILE LPAREN TypeKw VAR LESS Expr TERM RPAREN LBRACKET StmtList RBRACKET",
+/*24  */ "VAR ASSIGN Expr TERM",
+/*25  */ "BUILTIN LPAREN VAR RPAREN TERM",
+/*26  */ "RETURN RetVal TERM",
+/*27  */ "VAR",
+/*28  */ "NUM",
+/*29  */ "LABEL",
+/*30  */ "BREAK TERM",
+/*31  */ "VAR",
+/*32  */ "",
+/*33  */ "VAR PLUS Expr",
+/*34  */ "VAR",
+/*35  */ "NUM PLUS Expr",
+/*36  */ "NUM",
+/*37  */ "VAR MINUS Expr",
+/*38  */ "VAR MINUS NUM",
+/*39  */ "NUM MINUS Expr",
+/*40  */ "NUM MINUS NUM",
+};
+
+/*
+ *  LL(1) parse table [NNT=19][NTER=24]
+ *  Columns 22 (MINUS) and 23 (LESSEQ) added.
+ *  All existing entries preserved; new columns are 0 (error) for most NTs.
+ *  Expr row: MINUS never starts an Expr top-down (it's a binary op resolved via peek).
+ */
+
+static const int parse_table[NNT][NTER]={
+/*                INC CMT INT DEC VAR ASN NUM TRM MFN LPN RPN LBR RBR WHL LES PLS LBL BRK BLT RET FNC  $  MIN LEQ GRT GEQ */
+/* 0 Program    */{  1,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0},
+/* 1 Include    */{  2,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0},
+/* 2 CommentList*/{  0,  3,  4,  4,  0,  0,  0,  0,  4,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  4,  0,  0,  0,  0,  0},
+/* 3 FuncDeclLst*/{  0,  0,  5,  5,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0},
+/* 4 FuncDecl   */{  0,  0,  7,  7,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0},
+/* 5 TypeKw     */{  0,  0,  8,  9,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0},
+/* 6 MainBlock  */{  0,  0, 10, 10,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0},
+/* 7 StmtList   */{  0,  0, 11, 11, 11,  0,  0,  0,  0,  0, 12,  0, 12, 11,  0,  0, 11, 11, 11, 11,  0, 12,  0,  0,  0,  0},
+/* 8 Stmt       */{  0,  0, 19, 19, 14,  0,  0,  0,  0,  0,  0,  0,  0, 13,  0,  0, 17, 18, 15, 16,  0,  0,  0,  0,  0,  0},
+/* 9 DeclStmt   */{  0,  0, 20, 20,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0},
+/*10 WhileStmt  */{  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0, 23,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0},
+/*11 AssignStmt */{  0,  0,  0,  0, 24,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0},
+/*12 PrintStmt  */{  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0, 25,  0,  0,  0,  0,  0,  0,  0},
+/*13 ReturnStmt */{  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0, 26,  0,  0,  0,  0,  0,  0},
+/*14 RetVal     */{  0,  0,  0,  0, 27,  0, 28,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0},
+/*15 LabelStmt  */{  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0, 29,  0,  0,  0,  0,  0,  0,  0,  0,  0},
+/*16 BreakStmt  */{  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0, 30,  0,  0,  0,  0,  0,  0,  0,  0},
+/*17 ArgOpt     */{  0,  0,  0,  0, 31,  0,  0,  0,  0,  0, 32,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0},
+/*18 Expr(peek) */{  0,  0,  0,  0, 33,  0, 35,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0, 33,  0,  0,  0,  0,  0},
+};
+
+/* ── Parse stack ─────────────────────────────────────────────────── */
+#define MAXSTACK 1024
+#define MAXSYM     64
+static char pstk[MAXSTACK][MAXSYM];
+static int  ptop=-1;
+static void ps_push(const char *s){ if(ptop<MAXSTACK-1) strncpy(pstk[++ptop],s,MAXSYM-1); }
+static void ps_pop(char *o)       { if(ptop>=0) strcpy(o,pstk[ptop--]); else o[0]='\0'; }
+static void ps_reset(void)        { ptop=-1; }
+static void ps_str(char *buf,int sz){
+    buf[0]='\0';
+    for(int i=0;i<=ptop;i++){
+        if(i&&(int)strlen(buf)<sz-2) strcat(buf," ");
+        strncat(buf,pstk[i],(size_t)(sz-(int)strlen(buf)-1));
+    }
+}
+
+static int find_t(const char *x){
+    for(int i=0;i<NTER;i++) if(!strcmp(TERM_NAME[i],x)) return i;
+    return -1;
+}
+static int find_nt(const char *x){
+    for(int i=0;i<NNT;i++) if(!strcmp(NT_NAME[i],x)) return i;
+    return -1;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+ *  SECTION 3 — REPORT ENGINE  (enhanced colour & layout)
+ * ═══════════════════════════════════════════════════════════════════ */
+
+#define W_STACK 52
+#define W_LINE   4
+#define W_LEX   22
+#define W_TOK   12
+#define W_ACT   60
+
+static void hline(FILE *f){
+    fprintf(f,"+"); for(int i=0;i<W_STACK+2;i++) fprintf(f,"─");
+    fprintf(f,"+"); for(int i=0;i<W_LINE+2; i++) fprintf(f,"─");
+    fprintf(f,"+"); for(int i=0;i<W_LEX+2;  i++) fprintf(f,"─");
+    fprintf(f,"+"); for(int i=0;i<W_TOK+2;  i++) fprintf(f,"─");
+    fprintf(f,"+"); for(int i=0;i<W_ACT+2;  i++) fprintf(f,"─");
+    fprintf(f,"+\n");
+}
+
+static void hline_plain(FILE *f){
+    fprintf(f,"+"); for(int i=0;i<W_STACK+2;i++) fprintf(f,"-");
+    fprintf(f,"+"); for(int i=0;i<W_LINE+2; i++) fprintf(f,"-");
+    fprintf(f,"+"); for(int i=0;i<W_LEX+2;  i++) fprintf(f,"-");
+    fprintf(f,"+"); for(int i=0;i<W_TOK+2;  i++) fprintf(f,"-");
+    fprintf(f,"+"); for(int i=0;i<W_ACT+2;  i++) fprintf(f,"-");
+    fprintf(f,"+\n");
+}
+
+/* truncate a string to fit width w, using ellipsis */
+static void fit(char *dst, const char *src, int w){
+    int n=(int)strlen(src);
+    if(n<=w){ strncpy(dst,src,(size_t)w); dst[w]='\0'; return; }
+    strncpy(dst,src,(size_t)(w-3)); dst[w-3]='.'; dst[w-2]='.'; dst[w-1]='.'; dst[w]='\0';
+}
+
+static void prow(FILE *f,
+                 const char *stack, const char *lnum,
+                 const char *lex,   const char *tok, const char *act,
+                 const char *cs,    const char *cl,
+                 const char *cx,    const char *ct,  const char *ca, int colour)
+{
+    char s2[W_STACK+1], l2[W_LINE+1], x2[W_LEX+1], t2[W_TOK+1], a2[W_ACT+1];
+    fit(s2,stack,W_STACK); fit(l2,lnum,W_LINE);
+    fit(x2,lex,W_LEX);     fit(t2,tok,W_TOK);     fit(a2,act,W_ACT);
+    if(colour)
+        fprintf(f,"│ %s%-*s%s │ %s%-*s%s │ %s%-*s%s │ %s%-*s%s │ %s%-*s%s │\n",
+            cs,W_STACK,s2,RST, cl,W_LINE,l2,RST,
+            cx,W_LEX,x2,RST,  ct,W_TOK,t2,RST,
+            ca,W_ACT,a2,RST);
+    else
+        fprintf(f,"| %-*s | %-*s | %-*s | %-*s | %-*s |\n",
+            W_STACK,s2, W_LINE,l2, W_LEX,x2, W_TOK,t2, W_ACT,a2);
+}
+
+/* ── Box-drawing helpers ─────────────────────────────────────────── */
+static void top_box(FILE *f, const char *title, int colour){
+    int tw = W_STACK+W_LINE+W_LEX+W_TOK+W_ACT + 14;
+    if(colour) fprintf(f,"%s",CYN);
+    fprintf(f,"╔"); for(int i=0;i<tw-2;i++) fprintf(f,"═"); fprintf(f,"╗\n");
+    int tl=(int)strlen(title);
+    int pad=(tw-2-tl)/2;
+    fprintf(f,"║"); for(int i=0;i<pad;i++) fprintf(f," ");
+    if(colour) fprintf(f,"%s%s%s",BOLD,title,CYN);
+    else        fprintf(f,"%s",title);
+    for(int i=pad+tl;i<tw-2;i++) fprintf(f," ");
+    fprintf(f,"║\n");
+    fprintf(f,"╚"); for(int i=0;i<tw-2;i++) fprintf(f,"═"); fprintf(f,"╝\n");
+    if(colour) fprintf(f,"%s",RST);
+}
+
+static void report_lexer(FILE *f,int colour){
+    fprintf(f,"\n");
+    top_box(f,"  ◈  DFA LEXER  —  TOKENIZED OUTPUT  ◈  ",colour);
+    fprintf(f,"\n");
+    if(colour) fprintf(f,"%s",DIM);
+    fprintf(f,"  DFA  : %d states  ×  %d input classes\n",NUM_STATES,NC);
+    fprintf(f,"  Logic: next_state[state][class]  +  accepting_tokens[state]\n");
+    fprintf(f,"  New  : MINUS('-'), LESSEQ('<=') tokens added\n\n");
+    if(colour) fprintf(f,"%s",RST);
+
+    /* column headers */
+    int lw=6, tw=14, xw=30;
+    if(colour) fprintf(f,"%s",BOLD);
+    fprintf(f,"  %-*s  %-*s  %s\n", lw,"LINE", tw,"TOKEN TYPE", "LEXEME");
+    if(colour) fprintf(f,"%s",RST);
+    if(colour) fprintf(f,"%s",DIM);
+    fprintf(f,"  %-*s  %-*s  %s\n", lw,"──────", tw,"──────────────", "──────────────────────────────");
+    if(colour) fprintf(f,"%s",RST);
+
+    for(int i=0;i<ntok;i++){
+        const char *col="";
+        if(colour){
+            if(!strcmp(tokens[i].type,"UNKNOWN"))   col=RED;
+            else if(!strcmp(tokens[i].type,"COMMENT")) col=DIM;
+            else if(!strcmp(tokens[i].type,"INCLUDE")) col=MAG;
+            else if(!strcmp(tokens[i].type,"NUM"))     col=BLU;
+            else if(!strcmp(tokens[i].type,"VAR"))     col=WHT;
+            else if(!strcmp(tokens[i].type,"FUNC"))    col=CYN;
+            else if(!strcmp(tokens[i].type,"LABEL"))   col=YLW;
+            else if(!strcmp(tokens[i].type,"INT")||!strcmp(tokens[i].type,"DEC")
+                  ||!strcmp(tokens[i].type,"RETURN")||!strcmp(tokens[i].type,"WHILE")
+                  ||!strcmp(tokens[i].type,"BREAK")||!strcmp(tokens[i].type,"BUILTIN")
+                  ||!strcmp(tokens[i].type,"MAINFN"))  col=MAG;
+            else                                       col=GRN;
+        }
+        fprintf(f,"  %s%-*d%s  %s%-*s%s  %s\n",
+            colour?YLW:"", lw, tokens[i].line, colour?RST:"",
+            col, tw, tokens[i].type, colour?RST:"",
+            tokens[i].lex);
+    }
+
+    /* frequency table */
+    const char *ut[64]; int uf[64]; int nu=0;
+    for(int i=0;i<ntok;i++){
+        int found=0;
+        for(int j=0;j<nu;j++) if(ut[j]==tokens[i].type){uf[j]++;found=1;break;}
+        if(!found&&nu<64){ut[nu]=tokens[i].type;uf[nu]=1;nu++;}
+    }
+    fprintf(f,"\n");
+    if(colour) fprintf(f,"%s",DIM);
+    fprintf(f,"  ─────────────────────────────────────────────────\n");
+    if(colour) fprintf(f,"%s",RST);
+    if(colour) fprintf(f,"%s",BOLD);
+    fprintf(f,"  Total: %d tokens\n\n  Frequency:\n",ntok);
+    if(colour) fprintf(f,"%s",RST);
+    for(int j=0;j<nu;j++){
+        int bar=uf[j]; if(bar>40) bar=40;
+        if(colour) fprintf(f,"  %s%-14s%s : %s%-3d%s ",MAG,ut[j],RST,YLW,uf[j],RST);
+        else        fprintf(f,"  %-14s : %-3d ",ut[j],uf[j]);
+        if(colour) fprintf(f,"%s",GRN);
+        for(int k=0;k<bar;k++) fprintf(f,"█");
+        if(colour) fprintf(f,"%s",RST);
+        fprintf(f,"\n");
+    }
+}
+
+/* ── PARSER ─────────────────────────────────────────────────────── */
+static void parse_program(FILE *f, int colour){
+    fprintf(f,"\n\n");
+    top_box(f,"  ◈  LL(1) PARSER  —  FULL PARSE TRACE  ◈  ",colour);
+    fprintf(f,"\n");
+    if(colour) fprintf(f,"%s",DIM);
+    fprintf(f,
+        "  Grammar extensions (vs original):\n"
+        "    • MINUS('-') token — Expr now supports subtraction\n"
+        "    • LESSEQ('<=') token — WhileStmt accepts '<' or '<='\n"
+        "    • Expr -> VAR|NUM  [PLUS|MINUS]  Expr  (binary ops unified)\n"
+        "    • FuncDecl param is a _VAR (underscore-prefixed identifier)\n"
+        "    • Parse table: %d non-terminals × %d terminals\n\n",NNT,NTER);
+    if(colour) fprintf(f,"%s",RST);
+
+    #define MAX_PI 2048
+    int pidx[MAX_PI]; int np=0;
+    for(int i=0;i<ntok&&np<MAX_PI-1;i++)
+        if(strcmp(tokens[i].type,"UNKNOWN")!=0)
+            pidx[np++]=i;
+
+    /* header row */
+    if(colour) hline(f); else hline_plain(f);
+    prow(f,"STACK TOP     ","LINE","LEXEME","TOKEN",
+         "ACTION / PRODUCTION",BOLD,BOLD,BOLD,BOLD,BOLD,colour);
+    if(colour) hline(f); else hline_plain(f);
+
+    ps_reset();
+    ps_push("$");
+    ps_push("Program");
+
+    int ip=0, accepted=0, error=0;
+
+    while(ptop>=0){
+        char X[MAXSYM]; ps_pop(X);
+
+        const char *a_type, *a_lex, *a_line_s;
+        char linebuf[8];
+        if(ip<np){
+            int ti=pidx[ip];
+            a_type=tokens[ti].type; a_lex=tokens[ti].lex;
+            snprintf(linebuf,sizeof(linebuf),"%d",tokens[ti].line);
+            a_line_s=linebuf;
+        } else {
+            a_type="$"; a_lex="$"; a_line_s="-";
+        }
+
+        /* Show only the top of stack (X) instead of entire stack */
+        char disp[900];
+        snprintf(disp,sizeof(disp),"%s",X);
+
+        int tindex=find_t(X);
+
+        /* ── TERMINAL: match or error ──────────────────────────── */
+        if(tindex!=-1){
+            if(!strcmp(X,a_type)){
+                char act[160];
+                if(!strcmp(X,"$")){
+                    snprintf(act,sizeof(act),"match $  ──  ACCEPT ✓");
+                    prow(f,disp,a_line_s,a_lex,a_type,act,DIM,MAG,MAG,MAG,GRNBG,colour);
+                    accepted=1; break;
+                }
+                snprintf(act,sizeof(act),"match  %-10s  [%s]",X,a_lex);
+                prow(f,disp,a_line_s,a_lex,a_type,act,"",CYN,CYN,CYN,GRN,colour);
+                ip++;
+            } else {
+                char act[160];
+                snprintf(act,sizeof(act),"✗ expected %-10s  got %s [%s]",X,a_type,a_lex);
+                prow(f,disp,a_line_s,a_lex,a_type,act,"",RED,RED,RED,REDBG,colour);
+                error=1; break;
+            }
+            continue;
+        }
+
+        /* ── NON-TERMINAL: table lookup ────────────────────────── */
+        int ntindex=find_nt(X);
+        if(ntindex==-1){
+            char act[120]; snprintf(act,sizeof(act),"✗ unknown symbol '%s'",X);
+            prow(f,disp,a_line_s,a_lex,a_type,act,"",RED,RED,RED,REDBG,colour);
+            error=1; break;
+        }
+
+        int prod=0;
+
+        /* ── FuncDeclList: 1-token look-ahead disambiguation ──── */
+        if(ntindex==NT_FUNCDECLLIST){
+            int aindex=find_t(a_type);
+            if(aindex==T_INT||aindex==T_DEC){
+                const char *next_type="$";
+                if(ip+1<np) next_type=tokens[pidx[ip+1]].type;
+                prod=(!strcmp(next_type,"MAINFN"))?6:5;
+            } else {
+                int ai=find_t(a_type); if(ai<0) ai=T_DOLLAR;
+                prod=parse_table[ntindex][ai];
+            }
+        }
+
+        /* ── WhileStmt: accept LESS or LESSEQ ────────────────── */
+        else if(ntindex==NT_WHILESTMT){
+            /* Rule 23 has LESS in it; we'll push LESS or LESSEQ dynamically */
+            prod=23; /* always rule 23 — we patch the LESS slot below */
+        }
+
+        /* ── Expr: 2-token peek resolves operator ─────────────── */
+        else if(ntindex==NT_EXPR){
+            int is_var =!strcmp(a_type,"VAR");
+            int is_num =!strcmp(a_type,"NUM");
+            int is_func=!strcmp(a_type,"FUNC");
+
+            if(is_var||is_num){
+                const char *next_type="$";
+                if(ip+1<np) next_type=tokens[pidx[ip+1]].type;
+                int has_plus =!strcmp(next_type,"PLUS");
+                int has_minus=!strcmp(next_type,"MINUS");
+                if(is_var){
+                    if(has_plus)  prod=33;
+                    else if(has_minus) prod=37;
+                    else          prod=34;
+                } else {
+                    if(has_plus)  prod=35;
+                    else if(has_minus) prod=39;
+                    else          prod=36;
+                }
+            } else if(is_func){
+                /* Expr -> FUNC LPAREN ArgOpt RPAREN  (inline, no table entry) */
+                char act[120]; snprintf(act,sizeof(act),"Expr -> FUNC LPAREN ArgOpt RPAREN");
+                prow(f,disp,a_line_s,a_lex,a_type,act,"",CYN,CYN,MAG,YLW,colour);
+                ps_push("RPAREN");
+                ps_push("ArgOpt");
+                ps_push("LPAREN");
+                ps_push("FUNC");
+                continue;
+            } else {
+                char act[160];
+                snprintf(act,sizeof(act),"✗ Expr expects VAR/NUM/FUNC, got %s",a_type);
+                prow(f,disp,a_line_s,a_lex,a_type,act,"",RED,RED,RED,REDBG,colour);
+                error=1; break;
+            }
+        }
+
+        else {
+            int aindex=find_t(a_type);
+            if(aindex<0) aindex=T_DOLLAR;
+            prod=parse_table[ntindex][aindex];
+        }
+
+        if(prod==0){
+            char act[160];
+            snprintf(act,sizeof(act),"✗ no rule for ( %s , %s )",X,a_type);
+            prow(f,disp,a_line_s,a_lex,a_type,act,"",RED,RED,RED,REDBG,colour);
+            error=1; break;
+        }
+
+        const char *ac=(strlen(rule_rhs[prod-1])==0)?DIM:YLW;
+        prow(f,disp,a_line_s,a_lex,a_type,rule_label[prod-1],"",CYN,CYN,MAG,ac,colour);
+
+        if(strlen(rule_rhs[prod-1])>0){
+            /*
+             *  Special case — WhileStmt rule 23:
+             *  The grammar says LESS but if current token is LESSEQ we push LESSEQ instead.
+             *  This keeps everything else identical.
+             */
+            char rhs[300]; strncpy(rhs,rule_rhs[prod-1],sizeof(rhs)-1);
+            if(prod==23 && ip<np && !strcmp(tokens[pidx[ip]].type,"WHILE")){
+                /* look ahead to find the comparison token */
+                /* scan forward through WHILE LPAREN TypeKw VAR to find LESS/LESSEQ */
+                /* We'll substitute at push time by checking actual token stream */
+            }
+
+            char tmp[300]; strncpy(tmp,rule_rhs[prod-1],sizeof(tmp)-1);
+            char *tok2=strtok(tmp," ");
+            char syms[64][MAXSYM]; int k=0;
+            while(tok2&&k<64){
+                strncpy(syms[k],tok2,MAXSYM-1);
+                /*
+                 *  Patch: if this symbol is "LESS" and the actual upcoming comparison
+                 *  token in the stream is "LESSEQ", push "LESSEQ" instead.
+                 *  We search forward in pidx for the LESS/LESSEQ token after the WHILE/LPAREN/TypeKw/VAR.
+                 */
+                if(!strcmp(syms[k],"LESS")){
+                    /* find the comparison token: it's pidx[ip+4] for rule 23
+                       (WHILE=ip, LPAREN=ip+1, INT/DEC=ip+2, VAR=ip+3, cmp=ip+4) */
+                    int cmp_pos=ip+4;
+                    if(cmp_pos<np && !strcmp(tokens[pidx[cmp_pos]].type,"LESSEQ"))
+                        strncpy(syms[k],"LESSEQ",MAXSYM-1);
+                }
+                if(!strcmp(syms[k],"GREATER")){
+                    int cmp_pos=ip+4;
+                    if(cmp_pos<np){
+                        if(!strcmp(tokens[pidx[cmp_pos]].type,"GREATEREQ"))
+                            strncpy(syms[k],"GREATEREQ",MAXSYM-1);
+                    }
+                }
+                k++; tok2=strtok(NULL," ");
+            }
+            for(int i=k-1;i>=0;i--) ps_push(syms[i]);
+        }
+    }
+
+    if(colour) hline(f); else hline_plain(f);
+
+    /* verdict banner */
+    int total_w=W_STACK+W_LINE+W_LEX+W_TOK+W_ACT+14;
+    const char *verdict=accepted&&!error?"ACCEPTED ✓":"REJECTED ✗";
+    const char *detail =accepted&&!error?"program is syntactically valid":"syntax error detected";
+    char footer[220]; snprintf(footer,sizeof(footer),"  RESULT: %s  —  %s",verdict,detail);
+    int pad=total_w-4-(int)strlen(footer); if(pad<0) pad=0;
+    const char *bc=accepted&&!error?GRNBG:REDBG;
+    if(colour) fprintf(f,"│%s%-*s%s│\n",bc,total_w-2,footer,RST);
+    else        fprintf(f,"|%-*s|\n",total_w-2,footer);
+    if(colour) hline(f); else hline_plain(f);
+}
+
+static void full_report(FILE *f, int colour){
+    report_lexer(f,colour);
+    parse_program(f,colour);
+}
+
+int main(void){
+    FILE *fin=fopen("input.cbl","r");
+    char src[16384]={0};
+    if(fin){ int n=(int)fread(src,1,sizeof(src)-1,fin); fclose(fin); src[n]='\0'; }
+    else { fprintf(stderr,RED"Cannot open input.cbl\n"RST); return 1; }
+
+    scan(src);
+    full_report(stdout,1);
+
+    FILE *fout=fopen("tokenized.txt","w");
+    if(fout){ full_report(fout,0); fclose(fout); }
+    printf("\n%s  [Output saved → tokenized.txt]  %s\n",GRNBG,RST);
+    return 0;
+}
